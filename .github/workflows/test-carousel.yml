@@ -1,0 +1,79 @@
+name: Test Carousel API
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+
+      - name: Health check
+        run: |
+          curl -sf https://api.memfy.co/carousel/health | tee health.json
+          echo
+
+      - name: Launch generation (1 slide, low quality)
+        run: |
+          RESPONSE=$(curl -s -X POST https://api.memfy.co/carousel/generate \
+            -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "slug": "test-cowork",
+              "quality": "low",
+              "only": "1",
+              "spec": {
+                "slides": [
+                  {
+                    "kind": "hero",
+                    "title": "HELLO FROM\nCLAUDE COWORK",
+                    "subtitle": "PIPELINE TEST — NEXUS",
+                    "outfit": "black hoodie, black baseball cap, thick square black glasses",
+                    "pose": "three-quarter portrait, arms folded, focused stare"
+                  }
+                ]
+              }
+            }')
+          echo "$RESPONSE"
+          JOB_ID=$(echo "$RESPONSE" | jq -r '.job_id')
+          echo "JOB_ID=$JOB_ID" >> "$GITHUB_ENV"
+
+      - name: Poll job status
+        run: |
+          for i in $(seq 1 30); do
+            RESP=$(curl -s https://api.memfy.co/carousel/jobs/$JOB_ID \
+              -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}")
+            STATUS=$(echo "$RESP" | jq -r '.status')
+            echo "[$i] status=$STATUS"
+            if [ "$STATUS" = "done" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              break
+            fi
+            if [ "$STATUS" = "failed" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              echo "JOB FAILED:"
+              echo "$RESP" | jq -r '.log // "no log field"'
+              exit 1
+            fi
+            sleep 20
+          done
+          cat job_final.json
+
+      - name: Download generated slide
+        run: |
+          curl -s -o slide_1.jpg https://api.memfy.co/carousel/jobs/$JOB_ID/slide/1.jpg \
+            -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}"
+          file slide_1.jpg
+          ls -la slide_1.jpg
+          identify slide_1.jpg || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: carousel-test-slide
+          path: |
+            slide_1.jpg
+            job_final.json
+            health.json
