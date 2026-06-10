@@ -56,7 +56,7 @@ jobs:
       - name: Launch generation (5 slides, medium quality)
         run: |
           RESPONSE=$(curl -s -X POST https://api.memfy.co/carousel/generate \
-            -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}" \
+            -H "Authorization: Bearer 71f5c6be6c1b5b949e7baead8f54ee63ec29079365676884" \
             -H "Content-Type: application/json" \
             -d @payload.json)
           echo "$RESPONSE"
@@ -67,7 +67,7 @@ jobs:
         run: |
           for i in $(seq 1 60); do
             RESP=$(curl -s https://api.memfy.co/carousel/jobs/$JOB_ID \
-              -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}")
+              -H "Authorization: Bearer 71f5c6be6c1b5b949e7baead8f54ee63ec29079365676884")
             STATUS=$(echo "$RESP" | jq -r '.status')
             echo "[$i] status=$STATUS"
             if [ "$STATUS" = "done" ]; then
@@ -88,7 +88,7 @@ jobs:
         run: |
           for i in 1 2 3 4 5; do
             curl -s -o slide_$i.jpg https://api.memfy.co/carousel/jobs/$JOB_ID/slide/$i.jpg \
-              -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}"
+              -H "Authorization: Bearer 71f5c6be6c1b5b949e7baead8f54ee63ec29079365676884"
             file slide_$i.jpg
             ls -la slide_$i.jpg
           done
