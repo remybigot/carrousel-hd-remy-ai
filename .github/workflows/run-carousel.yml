@@ -1,0 +1,102 @@
+name: Run Carousel (full, medium quality)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick
+
+      - name: Health check
+        run: curl -sf https://api.memfy.co/carousel/health
+
+      - name: Write payload
+        run: |
+          cat > payload.json << 'EOF'
+          {
+            "slug": "openai-ipo-own-it",
+            "quality": "medium",
+            "spec": {
+              "slides": [
+                {
+                  "kind": "hero",
+                  "title": "OPENAI\nGOES PUBLIC.\nWHO PAYS\nTHE BILL?",
+                  "subtitle": "THEIR $1T VALUATION. YOUR SUBSCRIPTION.",
+                  "outfit": "dark navy blazer, open collar white shirt, black baseball cap, thick square black glasses",
+                  "pose": "three-quarter portrait, arms folded, chin-up, cold stare, head and torso"
+                },
+                {
+                  "kind": "text",
+                  "body": "OPENAI FILED\nFOR IPO.\n\nWhen your AI provider\ngoes public,\nshareholders decide\nyour price."
+                },
+                {
+                  "kind": "text",
+                  "body": "$1 TRILLION\nVALUATION.\n\nEvery dollar of profit\ncomes from what\nyou pay them."
+                },
+                {
+                  "kind": "text",
+                  "body": "ANTHROPIC. OPENAI.\nBOTH GOING PUBLIC.\n\nYour AI subscription\nis now a Wall Street\nline item. Not yours."
+                },
+                {
+                  "kind": "cta",
+                  "title": "COMMENT NEXUS\nBELOW.\n\nSTOP RENTING\nINTELLIGENCE.",
+                  "subtitle": "OWN IT. — NEXUS BY ASYMMETRY PARTNERS",
+                  "comment_text": "NEXUS",
+                  "outfit": "plain black t-shirt, black baseball cap, thick square black glasses",
+                  "pose": "tight chest-up, three-quarter, eyes locked on camera, strong shadow"
+                }
+              ]
+            }
+          }
+          EOF
+
+      - name: Launch generation (5 slides, medium quality)
+        run: |
+          RESPONSE=$(curl -s -X POST https://api.memfy.co/carousel/generate \
+            -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d @payload.json)
+          echo "$RESPONSE"
+          JOB_ID=$(echo "$RESPONSE" | jq -r '.job_id')
+          echo "JOB_ID=$JOB_ID" >> "$GITHUB_ENV"
+
+      - name: Poll job status
+        run: |
+          for i in $(seq 1 60); do
+            RESP=$(curl -s https://api.memfy.co/carousel/jobs/$JOB_ID \
+              -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}")
+            STATUS=$(echo "$RESP" | jq -r '.status')
+            echo "[$i] status=$STATUS"
+            if [ "$STATUS" = "done" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              break
+            fi
+            if [ "$STATUS" = "failed" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              echo "JOB FAILED:"
+              echo "$RESP" | jq -r '.log // "no log field"'
+              exit 1
+            fi
+            sleep 20
+          done
+          cat job_final.json
+
+      - name: Download generated slides
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -s -o slide_$i.jpg https://api.memfy.co/carousel/jobs/$JOB_ID/slide/$i.jpg \
+              -H "Authorization: Bearer ${{ secrets.CAROUSEL_API_TOKEN }}"
+            file slide_$i.jpg
+            ls -la slide_$i.jpg
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: carousel-openai-ipo
+          path: |
+            slide_*.jpg
+            job_final.json
