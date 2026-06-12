@@ -1,0 +1,95 @@
+name: Daily Carousel (Nexus)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # 08:00 Paris (UTC+2 en été, UTC+1 en hiver -> ~07:00/08:00)
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check
+        run: curl -sf https://api.memfy.co/carousel/health
+
+      - name: Ask Claude for today's spec
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          PROMPT='Tu es le redacteur editorial de NEXUS (Asymmetry Partners). Angle: "arrete de LOUER l intelligence, possede-la" (own it, stop renting intelligence).
+
+Choisis LA news IA la plus marquante des dernieres 24h (sortie de modele, deal, levee de fonds, chiffre choc...).
+
+Reponds UNIQUEMENT avec un objet JSON valide (rien avant, rien apres), au format exact suivant:
+
+{
+  "slug": "mot-cle-de-la-news-en-minuscules-avec-tirets",
+  "spec": {
+    "slides": [
+      {"kind":"hero","title":"TITRE CHOC\nEN MAJUSCULES\nSUR PLUSIEURS LIGNES","subtitle":"SOUS-TITRE AVEC LE CHIFFRE CLE","outfit":"look sombre tech: crewneck ou veste noire, casquette noire, lunettes carrees noires","pose":"description de pose portrait"},
+      {"kind":"text","body":"IDEE 1\n(LINFO)\n\nDetail en quelques lignes courtes."},
+      {"kind":"text","body":"IDEE 2\n(LA RELECTURE)\n\nDetail en quelques lignes courtes."},
+      {"kind":"text","body":"IDEE 3\n(LE SIGNAL)\n\nDetail en quelques lignes courtes."},
+      {"kind":"cta","title":"COMMENT NEXUS\nBELOW.\n\nSTOP RENTING\nINTELLIGENCE.","subtitle":"OWN IT. — NEXUS BY ASYMMETRY PARTNERS","comment_text":"NEXUS","outfit":"look sombre tech: crewneck ou veste noire, casquette noire, lunettes carrees noires","pose":"description de pose portrait"}
+    ]
+  }
+}
+
+Titres et corps de texte en ANGLAIS, MAJUSCULES, courts, empiles sur plusieurs lignes (utilise \n). Ne mets ni "face" ni "out_dir" ni "style_refs".'
+
+          JSON_PAYLOAD=$(jq -n --arg p "$PROMPT" '{"model":"claude-sonnet-4-6","max_tokens":2000,"messages":[{"role":"user","content":$p}]}')
+
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$JSON_PAYLOAD")
+
+          echo "$RESPONSE" | jq -r '.content[0].text' > spec_raw.json
+          cat spec_raw.json
+
+          # Sanity check: must be valid JSON with slug + spec
+          jq -e '.slug and .spec.slides' spec_raw.json > /dev/null
+
+      - name: Build payload and launch generation
+        run: |
+          jq '. + {"quality":"medium"}' spec_raw.json > payload.json
+          cat payload.json
+
+          RESPONSE=$(curl -s -X POST https://api.memfy.co/carousel/generate \
+            -H "Authorization: Bearer cowork_cdc820764c19a9441710e9ccab692ead51b8e13e" \
+            -H "Content-Type: application/json" \
+            -d @payload.json)
+          echo "$RESPONSE"
+          JOB_ID=$(echo "$RESPONSE" | jq -r '.job_id')
+          echo "JOB_ID=$JOB_ID" >> "$GITHUB_ENV"
+
+      - name: Poll job status
+        run: |
+          for i in $(seq 1 60); do
+            RESP=$(curl -s https://api.memfy.co/carousel/jobs/$JOB_ID \
+              -H "Authorization: Bearer cowork_cdc820764c19a9441710e9ccab692ead51b8e13e")
+            STATUS=$(echo "$RESP" | jq -r '.status')
+            echo "[$i] status=$STATUS"
+            if [ "$STATUS" = "done" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              break
+            fi
+            if [ "$STATUS" = "failed" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              echo "JOB FAILED:"
+              echo "$RESP" | jq -r '.log // "no log field"'
+              exit 1
+            fi
+            sleep 20
+          done
+          cat job_final.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-carousel
+          path: |
+            spec_raw.json
+            payload.json
+            job_final.json
