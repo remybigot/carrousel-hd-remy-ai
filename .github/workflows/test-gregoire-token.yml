@@ -1,0 +1,63 @@
+name: Test Carousel API (Gregoire token)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Health check (no auth)
+        run: |
+          curl -s https://api.memfy.co/carousel/health | tee health.json
+          echo
+
+      - name: 2. Test token (list jobs)
+        run: |
+          curl -s https://api.memfy.co/carousel/jobs \
+            -H "Authorization: Bearer cowork_cdc820764c19a9441710e9ccab692ead51b8e13e" | tee jobs.json
+          echo
+
+      - name: 3. Generate 1 test slide
+        run: |
+          RESPONSE=$(curl -s -X POST https://api.memfy.co/carousel/generate \
+            -H "Authorization: Bearer cowork_cdc820764c19a9441710e9ccab692ead51b8e13e" \
+            -H "Content-Type: application/json" \
+            -d '{"slug":"picol-test","quality":"medium","only":"1",
+                 "spec":{"slides":[
+                   {"kind":"hero","title":"TEST\nDE PICOL","subtitle":"CONNEXION OK",
+                    "outfit":"plain black crewneck, black cap, thick square black glasses",
+                    "pose":"three-quarter portrait, arms folded, cold stare"}]}}')
+          echo "$RESPONSE"
+          JOB_ID=$(echo "$RESPONSE" | jq -r '.job_id')
+          echo "JOB_ID=$JOB_ID" >> "$GITHUB_ENV"
+
+      - name: Poll job status
+        run: |
+          for i in $(seq 1 30); do
+            RESP=$(curl -s https://api.memfy.co/carousel/jobs/$JOB_ID \
+              -H "Authorization: Bearer cowork_cdc820764c19a9441710e9ccab692ead51b8e13e")
+            STATUS=$(echo "$RESP" | jq -r '.status')
+            echo "[$i] status=$STATUS"
+            if [ "$STATUS" = "done" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              break
+            fi
+            if [ "$STATUS" = "failed" ]; then
+              echo "$RESP" | jq '.' > job_final.json
+              echo "JOB FAILED:"
+              echo "$RESP" | jq -r '.log // "no log field"'
+              exit 1
+            fi
+            sleep 20
+          done
+          cat job_final.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gregoire-token-test
+          path: |
+            health.json
+            jobs.json
+            job_final.json
