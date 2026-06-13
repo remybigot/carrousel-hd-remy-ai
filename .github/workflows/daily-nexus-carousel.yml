@@ -36,7 +36,7 @@ jobs:
             -H "content-type: application/json" \
             -d "$JSON_PAYLOAD")
 
-          echo "$RESPONSE" | jq -r '.content[0].text' > spec_raw.json
+          echo "$RESPONSE" | jq -r '.content[0].text' | sed -e '/^```/d' > spec_raw.json
           cat spec_raw.json
 
           jq -e '.slug and .spec.slides' spec_raw.json > /dev/null
