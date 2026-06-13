@@ -2,6 +2,8 @@ name: Daily Carousel (Nexus)
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
 
 jobs:
   run:
@@ -15,25 +17,16 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           PROMPT='Tu es le redacteur editorial de NEXUS (Asymmetry Partners). Angle: "arrete de LOUER l intelligence, possede-la" (own it, stop renting intelligence).
-
-Choisis LA news IA la plus marquante des dernieres 24h (sortie de modele, deal, levee de fonds, chiffre choc...).
-
-Reponds UNIQUEMENT avec un objet JSON valide (rien avant, rien apres), au format exact suivant:
-
-{
-  "slug": "mot-cle-de-la-news-en-minuscules-avec-tirets",
-  "spec": {
-    "slides": [
-      {"kind":"hero","title":"TITRE CHOC\nEN MAJUSCULES\nSUR PLUSIEURS LIGNES","subtitle":"SOUS-TITRE AVEC LE CHIFFRE CLE","outfit":"look sombre tech: crewneck ou veste noire, casquette noire, lunettes carrees noires","pose":"description de pose portrait"},
-      {"kind":"text","body":"IDEE 1\n(LINFO)\n\nDetail en quelques lignes courtes."},
-      {"kind":"text","body":"IDEE 2\n(LA RELECTURE)\n\nDetail en quelques lignes courtes."},
-      {"kind":"text","body":"IDEE 3\n(LE SIGNAL)\n\nDetail en quelques lignes courtes."},
-      {"kind":"cta","title":"COMMENT NEXUS\nBELOW.\n\nSTOP RENTING\nINTELLIGENCE.","subtitle":"OWN IT. — NEXUS BY ASYMMETRY PARTNERS","comment_text":"NEXUS","outfit":"look sombre tech: crewneck ou veste noire, casquette noire, lunettes carrees noires","pose":"description de pose portrait"}
-    ]
-  }
-}
-
-Titres et corps de texte en ANGLAIS, MAJUSCULES, courts, empiles sur plusieurs lignes (utilise \n). Ne mets ni "face" ni "out_dir" ni "style_refs".'
+          Choisis LA news IA la plus marquante des dernieres 24h (sortie de modele, deal, levee de fonds, chiffre choc...).
+          Reponds UNIQUEMENT avec un objet JSON valide (rien avant, rien apres), au format exact suivant:
+          { "slug": "mot-cle-de-la-news-en-minuscules-avec-tirets", "spec": { "slides": [
+          {"kind":"hero","title":"TITRE CHOC\nEN MAJUSCULES\nSUR PLUSIEURS LIGNES","subtitle":"SOUS-TITRE AVEC LE CHIFFRE CLE","outfit":"look sombre tech: crewneck ou veste noire, casquette noire, lunettes carrees noires","pose":"description de pose portrait"},
+          {"kind":"text","body":"IDEE 1\n(LINFO)\n\nDetail en quelques lignes courtes."},
+          {"kind":"text","body":"IDEE 2\n(LA RELECTURE)\n\nDetail en quelques lignes courtes."},
+          {"kind":"text","body":"IDEE 3\n(LE SIGNAL)\n\nDetail en quelques lignes courtes."},
+          {"kind":"cta","title":"COMMENT NEXUS\nBELOW.\n\nSTOP RENTING\nINTELLIGENCE.","subtitle":"OWN IT. NEXUS BY ASYMMETRY PARTNERS","comment_text":"NEXUS","outfit":"look sombre tech: crewneck ou veste noire, casquette noire, lunettes carrees noires","pose":"description de pose portrait"}
+          ] } }
+          Titres et corps de texte en ANGLAIS, MAJUSCULES, courts, empiles sur plusieurs lignes (utilise \n). Ne mets ni face ni out_dir ni style_refs.'
 
           JSON_PAYLOAD=$(jq -n --arg p "$PROMPT" '{"model":"claude-sonnet-4-6","max_tokens":2000,"messages":[{"role":"user","content":$p}]}')
 
@@ -46,7 +39,6 @@ Titres et corps de texte en ANGLAIS, MAJUSCULES, courts, empiles sur plusieurs l
           echo "$RESPONSE" | jq -r '.content[0].text' > spec_raw.json
           cat spec_raw.json
 
-          # Sanity check: must be valid JSON with slug + spec
           jq -e '.slug and .spec.slides' spec_raw.json > /dev/null
 
       - name: Build payload and launch generation
