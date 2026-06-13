@@ -2,8 +2,6 @@ name: Daily Carousel (Nexus)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * *"
 
 jobs:
   run:
